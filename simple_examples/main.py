@@ -148,7 +148,7 @@ def main():
 
     output = fcn(input)['out']
     print('output shape: ', output.shape)
-    print('output looks like...\n', output)
+    #print('output looks like...\n', output)
     # output shape is [1, 21, 224, 224] or [batch_size, classes, height, width]
     # it has 21 'channels' where each individual channel pixel represents...
     # todo: understand what the pixel values represent
@@ -157,8 +157,9 @@ def main():
 
     # 'condense' the 21 channels to 1 channel and give each pixel the appropriate class label
     out = torch.argmax(output.squeeze(), dim=0).detach().cpu().numpy()
-    print(out.shape)
-    print(np.unique(out))
+    print('squeezing...')
+    print('output shape: ', out.shape)
+    print('classes in the output image: ', np.unique(out))
 
     ##################################################
     # decode the output                              #
