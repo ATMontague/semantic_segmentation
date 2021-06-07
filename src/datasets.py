@@ -25,7 +25,6 @@ class FreiburgForestDataset(Dataset):
         """
 
         if self.transform_images:
-            #random.seed(0)
 
             # randomly perform horizontal flipping
             if random.random() > 0.5:
@@ -77,7 +76,7 @@ class FreiburgForestDataset(Dataset):
         if self.encode:
             mask = self.rgb_to_class(mask)
 
-        resize = transforms.Resize(size=(384, 768))
+        resize = transforms.Resize(size=(250, 250))
         image = resize(image)
         mask = resize(mask)
 

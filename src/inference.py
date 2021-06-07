@@ -1,11 +1,8 @@
 import torch
-from torch import nn, optim
-from datasets import FreiburgForestDataset
-from torch.utils.data import DataLoader, random_split
 import numpy as np
 from PIL import Image
 import torchvision.transforms as T
-
+from models.simple import Net
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -59,14 +56,14 @@ def decode_segmentation_map(image, num_channels, dataset):
 
 def main():
     # load previously computed model
-    model = AdapNet(C=5)  # c is number of categories (classes?)
+    model = Net()
     model = model.to(device)
-    m = 'models/sun_best_model.pt'
+    m = 'best_model.pt'
     model.load_state_dict(torch.load(m, map_location=torch.device('cpu')))
     model.eval()
 
     # get image to test
-    img = '/mnt/d/data/SUNRGBD/kv1/b3dodata/img_0065/image/img_0065.jpg'
+    img = '../data/freiburg_forest_annotated/test/rgb/b1-09517_Clipped.jpg'
     img = Image.open(img)
     transforms = T.Compose([T.Resize(size=(384, 768)), T.ToTensor()])
     input = transforms(img).unsqueeze(0)
@@ -75,7 +72,7 @@ def main():
     ####################################
     # forward pass through the network #
     ####################################
-    aux1, aux2, output = model(input)
+    output = model(input)
     print('output shape: ', output.shape)
     output = torch.argmax(output.squeeze(), dim=0).detach().cpu().numpy()
 
@@ -89,7 +86,7 @@ def main():
     print('count of each class: ', d)
     ############################################
 
-    rgb = decode_segmentation_map(output, 5, 'sun')
+    rgb = decode_segmentation_map(output, 5, 'freiburg')
     img = Image.fromarray(rgb)
     img.save('test.png')
 
