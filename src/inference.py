@@ -65,7 +65,7 @@ def main():
     # get image to test
     img = '../data/freiburg_forest_annotated/test/rgb/b1-09517_Clipped.jpg'
     img = Image.open(img)
-    transforms = T.Compose([T.Resize(size=(384, 768)), T.ToTensor()])
+    transforms = T.Compose([T.Resize(size=(250, 250)), T.ToTensor()])
     input = transforms(img).unsqueeze(0)
     print('input shape: ', input.shape)
 
