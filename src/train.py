@@ -5,6 +5,7 @@ from datasets import FreiburgForestDataset
 from torch.utils.data import DataLoader, random_split
 import numpy as np
 from models.simple import Net
+import matplotlib.pyplot as plt
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -18,6 +19,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
     # track change in validation loss
     valid_loss_min = np.Inf
     train_loss_over_time = []
+    valid_loss_over_time = []
 
     for e in range(epochs):
         print('EPOCH: ', e)
@@ -41,7 +43,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
             # clear the gradients of all optimized variables
             optimizer.zero_grad()
 
-            # forward: gives 3 tensors
+            # forward
             output = model(images)  # shape = (batch_size, num_classes, height, width) = (n, 6, 250, 250)
 
             # backward
@@ -49,7 +51,6 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * images.size(0)
-            train_loss_over_time.append(train_loss)
 
         ######################
         # validate the model #
@@ -71,17 +72,17 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
             validation_loss += loss.item() * images.size(0)
 
         # calculate average losses
-        temp = 0.000001
-        train_loss = (train_loss + temp) / (len(train_loader.sampler) + temp)
-        validation_loss = (validation_loss + temp) / (len(valid_loader.sampler) + temp)
+        train_loss = train_loss / len(train_loader.sampler)
+        validation_loss = validation_loss / len(valid_loader.sampler)
+        train_loss_over_time.append(train_loss)
+        valid_loss_over_time.append(validation_loss)
 
         # save model if validation loss has decreased
         if validation_loss <= valid_loss_min:
-            print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(
-                valid_loss_min,
-                validation_loss))
+            print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_loss_min, validation_loss))
             torch.save(model.state_dict(), 'best_model.pt')
             valid_loss_min = validation_loss
+    return train_loss_over_time, valid_loss_over_time
 
 
 def main():
@@ -95,8 +96,8 @@ def main():
     train_count = int(np.ceil(0.8 * len(dataset)))
     valid_count = int(np.floor(0.2 * len(dataset)))
     train_data, validation_data = random_split(dataset, (train_count, valid_count))
-    train_loader = DataLoader(dataset=train_data, batch_size=1, shuffle=False)
-    valid_loader = DataLoader(dataset=validation_data, batch_size=1, shuffle=False)
+    train_loader = DataLoader(dataset=train_data, batch_size=5, shuffle=False)
+    valid_loader = DataLoader(dataset=validation_data, batch_size=5, shuffle=False)
 
     # load model
     model = Net()
@@ -105,9 +106,18 @@ def main():
     optim = Adam(model.parameters(), lr=learning_rate)
 
     # train the first model
+    EPOCHS = 50
     print('----------------------training----------------------')
-    train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
-                criterion=criterion, optimizer=optim, epochs=5)
+    train_loss, valid_loss = train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
+                                         criterion=criterion, optimizer=optim, epochs=EPOCHS)
+
+    # plot train loss
+    plt.plot(train_loss, label='Training Loss')
+    plt.plot(valid_loss, label='Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend(frameon=False)
+    plt.savefig('test.png')
 
 
 if __name__ == '__main__':
