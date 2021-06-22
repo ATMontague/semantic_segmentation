@@ -17,3 +17,8 @@ class Net(nn.Module):
         x = self.pool(x)           # shape = (b, 6, 124, 124)
         x = self.deconv(x)         # shape = (b, 6, 250, 250)
         return x
+
+
+if __name__ == '__main__':
+    net = Net()
+    print(net)
