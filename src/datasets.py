@@ -33,9 +33,9 @@ class FreiburgForestDataset(Dataset):
 
             # randomly shear
             if random.random() > 0.5:
-                # todo: figure out how to handle new pixels after shear. utilize 'fill'
-                image = TF.affine(image, angle=0, translate=[0, 0], scale=1.0, shear=45.0)
-                mask = TF.affine(mask, angle=0, translate=[0, 0], scale=1.0, shear=45.0)
+                rand_shear = random.randint(5, 15)
+                image = TF.affine(image, angle=0, translate=[0, 0], scale=1.2, shear=rand_shear)
+                mask = TF.affine(mask, angle=0, translate=[0, 0], scale=1.2, shear=rand_shear)
 
             # random rotation
             if random.random() > 0.5:
@@ -47,7 +47,7 @@ class FreiburgForestDataset(Dataset):
 
             # random scaling. (scaling < 1.0 causes unnecessary border)
             if random.random() > 0.5:
-                rand_scale = random.uniform(0.5, 2.0)
+                rand_scale = random.uniform(1.0, 1.2)
                 image = TF.affine(image, angle=0, translate=[0, 0], scale=rand_scale, shear=0.0, fillcolor=0)
                 mask = TF.affine(mask, angle=0, translate=[0, 0], scale=rand_scale, shear=0.0, fillcolor=0)
 
@@ -55,15 +55,22 @@ class FreiburgForestDataset(Dataset):
             if random.random() > 0.5:
                 pass  # todo: implement vignetting
 
-            # random cropping
+            # random blur
             if random.random() > 0.5:
-                # todo: set parameters according to paper
-                i_loc = random.randint(0, 100)
-                j_loc = random.randint(0, 100)
-                w_size = random.randint(500, 600)
-                h_size = random.randint(200, 400)
-                image = TF.resized_crop(image, i=i_loc, j=j_loc, h=h_size, w=w_size, size=(384, 768))
-                mask = TF.resized_crop(mask, i=i_loc, j=j_loc, h=h_size, w=w_size, size=(384, 768))
+                rand_sigma = random.uniform(1.0, 2.0)
+                rand_kernel = random.choice([3, 5, 7])
+                image = TF.gaussian_blur(kernel_size=rand_kernel, sigma=rand_sigma)
+                mask = TF.gaussian_blur(kernel_size=rand_kernel, sigma=rand_sigma)
+
+            # # random cropping
+            # if random.random() > 0.5:
+            #     # todo: set parameters according to paper
+            #     i_loc = random.randint(0, 100)
+            #     j_loc = random.randint(0, 100)
+            #     w_size = random.randint(500, 600)
+            #     h_size = random.randint(200, 400)
+            #     image = TF.resized_crop(image, i=i_loc, j=j_loc, h=h_size, w=w_size, size=(384, 768))
+            #     mask = TF.resized_crop(mask, i=i_loc, j=j_loc, h=h_size, w=w_size, size=(384, 768))
 
             # random brightness
             if random.random() > 0.5:
@@ -76,7 +83,7 @@ class FreiburgForestDataset(Dataset):
         if self.encode:
             mask = self.rgb_to_class(mask)
 
-        resize = transforms.Resize(size=(250, 250))
+        resize = transforms.Resize(size=(256, 256))
         image = resize(image)
         mask = resize(mask)
 
