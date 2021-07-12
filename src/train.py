@@ -4,11 +4,14 @@ import torch.nn as nn
 from datasets import FreiburgForestDataset
 from torch.utils.data import DataLoader, random_split
 import numpy as np
-from models.simple import Net
+from models.unet import Unet
 import matplotlib.pyplot as plt
-
+from mlflow import log_metric, log_param
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+EPOCHS = 2
+BATCH_SIZE = 5
 
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=2):
@@ -32,8 +35,8 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
         ###################
         model.train()
         for images, labels in train_loader:
-            images = images.to(device)  # shape = (batch_size, num_channels, height, width) = (n, 3, 250, 250)
-            labels = labels.to(device)  # shape = (batch_size, num_channels, height, width) = (n, 1, 250, 250)
+            images = images.to(device)  # shape = (batch_size, num_channels, height, width) = (n, 3, H, W)
+            labels = labels.to(device)  # shape = (batch_size, num_channels, height, width) = (n, 1, H, W)
 
             # reverse normalization to get class labels
             labels = labels*255  # todo: see if this is correct or see if there is a better way
@@ -44,7 +47,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
             optimizer.zero_grad()
 
             # forward
-            output = model(images)  # shape = (batch_size, num_classes, height, width) = (n, 6, 250, 250)
+            output = model(images)  # shape = (batch_size, num_classes, height, width) = (n, 6, H, W)
 
             # backward
             loss = criterion(output, target)
@@ -80,8 +83,9 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
         # save model if validation loss has decreased
         if validation_loss <= valid_loss_min:
             print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_loss_min, validation_loss))
-            torch.save(model.state_dict(), 'best_model.pt')
+            torch.save(model.state_dict(), '../models/best_model.pt')
             valid_loss_min = validation_loss
+            log_metric('validation loss', valid_loss_min)
     return train_loss_over_time, valid_loss_over_time
 
 
@@ -96,17 +100,24 @@ def main():
     train_count = int(np.ceil(0.8 * len(dataset)))
     valid_count = int(np.floor(0.2 * len(dataset)))
     train_data, validation_data = random_split(dataset, (train_count, valid_count))
-    train_loader = DataLoader(dataset=train_data, batch_size=5, shuffle=False)
-    valid_loader = DataLoader(dataset=validation_data, batch_size=5, shuffle=False)
+    train_loader = DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=False)
+    valid_loader = DataLoader(dataset=validation_data, batch_size=BATCH_SIZE, shuffle=False)
 
     # load model
-    model = Net()
+    model = Unet()
     learning_rate = 0.001
     criterion = nn.CrossEntropyLoss()
     optim = Adam(model.parameters(), lr=learning_rate)
 
+    # track hyperparameters
+    log_param('lr', learning_rate)
+    log_param('batch size', BATCH_SIZE)
+    log_param('loss', 'Cross Entropy')
+    log_param('optim', 'Adam')
+    log_param('epochs', EPOCHS)
+
     # train the first model
-    EPOCHS = 50
+
     print('----------------------training----------------------')
     train_loss, valid_loss = train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
                                          criterion=criterion, optimizer=optim, epochs=EPOCHS)
@@ -117,7 +128,7 @@ def main():
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend(frameon=False)
-    plt.savefig('test.png')
+    plt.savefig('model_loss.png')
 
 
 if __name__ == '__main__':
