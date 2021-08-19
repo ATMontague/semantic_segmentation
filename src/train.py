@@ -1,3 +1,5 @@
+import argparse
+import yaml
 import torch
 from torch.optim import Adam
 import torch.nn as nn
@@ -8,10 +10,15 @@ from models.unet import Unet
 import matplotlib.pyplot as plt
 from mlflow import log_metric, log_param
 
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-EPOCHS = 2
-BATCH_SIZE = 5
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', default='../config/freiburg_config.yaml',
+                        help='The config file to be used to determine hyperparameters.')
+    return parser.parse_args()
 
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=2):
@@ -79,17 +86,26 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
         validation_loss = validation_loss / len(valid_loader.sampler)
         train_loss_over_time.append(train_loss)
         valid_loss_over_time.append(validation_loss)
+        log_metric('training loss', train_loss)
+        log_metric('validation loss', validation_loss)
 
         # save model if validation loss has decreased
         if validation_loss <= valid_loss_min:
             print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_loss_min, validation_loss))
             torch.save(model.state_dict(), '../models/best_model.pt')
             valid_loss_min = validation_loss
-            log_metric('validation loss', valid_loss_min)
+            #log_metric('validation loss', valid_loss_min)
     return train_loss_over_time, valid_loss_over_time
 
 
 def main():
+
+    args = get_args()
+    try:
+        with open(args.config, 'r') as f:
+            params = yaml.load(f, Loader=yaml.FullLoader)
+    except FileNotFoundError:
+        raise FileNotFoundError('No config file found.')
 
     # load training dataset
     image_path = '../data/freiburg_forest_annotated/train/rgb'
@@ -100,27 +116,30 @@ def main():
     train_count = int(np.ceil(0.8 * len(dataset)))
     valid_count = int(np.floor(0.2 * len(dataset)))
     train_data, validation_data = random_split(dataset, (train_count, valid_count))
-    train_loader = DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=False)
-    valid_loader = DataLoader(dataset=validation_data, batch_size=BATCH_SIZE, shuffle=False)
+    train_loader = DataLoader(dataset=train_data, batch_size=params['batch_size'], shuffle=False)
+    valid_loader = DataLoader(dataset=validation_data, batch_size=params['batch_size'], shuffle=False)
 
     # load model
     model = Unet()
-    learning_rate = 0.001
+    learning_rate = params['lr']
     criterion = nn.CrossEntropyLoss()
     optim = Adam(model.parameters(), lr=learning_rate)
 
     # track hyperparameters
-    log_param('lr', learning_rate)
-    log_param('batch size', BATCH_SIZE)
+    log_param('model', params['model'])
+    log_param('dataset', params['dataset'])
+    log_param('train set size', train_count)
+    log_param('validation set size', valid_count)
+    log_param('lr', params['lr'])
+    log_param('batch size', params['batch_size'])
     log_param('loss', 'Cross Entropy')
     log_param('optim', 'Adam')
-    log_param('epochs', EPOCHS)
+    log_param('epochs', params['epochs'])
 
-    # train the first model
-
+    # train the model
     print('----------------------training----------------------')
     train_loss, valid_loss = train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
-                                         criterion=criterion, optimizer=optim, epochs=EPOCHS)
+                                         criterion=criterion, optimizer=optim, epochs=params['epochs'])
 
     # plot train loss
     plt.plot(train_loss, label='Training Loss')

@@ -1,7 +1,10 @@
 import argparse
 import os
-from src import datasets
+from src.datasets import FreiburgForestDataset
 from torchvision.utils import save_image
+from distutils.dir_util import copy_tree
+import shutil
+import random
 
 
 def get_args():
@@ -11,11 +14,12 @@ def get_args():
                         help='The path to the training data folder.')
     parser.add_argument('--masks', default='/mnt/d/data/freiburg_forest_annotated/train/GT_color',
                         help='The path to the test data folder.')
-    parser.add_argument('--train', default=True, help='Train or test.')
-    parser.add_argument('--path', default='/mnt/d/data/test', help='Path where new data will be saved.')
+    parser.add_argument('--train', default='True', help='Train or test.')
+    parser.add_argument('--path', default='/mnt/c/Users/atmon/repos/tutorials/semantic_segmentation/data/freiburg_augmented',
+                        help='Path where new data will be saved.')
     parser.add_argument('--dataset', default='Freiburg Forest', help='Dataset to be used.')
     parser.add_argument('--transform', default=True, help='Performing data augmentation.')
-    parser.add_argument('--amount', default=100, help='How many new images to create.')
+    parser.add_argument('--amount', default=1000, help='How many new images to create.')
     return parser.parse_args()
 
 
@@ -53,14 +57,29 @@ def create_file(image_path, mask_path, new_path, train, images_path, masks_path)
 
 def transform_images(image_path, mask_path, output_path, train, images_path, masks_path, transform, amount):
 
+    count = 0
+    # first get original data, then do augmented data. not the best way but it works
+    data = FreiburgForestDataset(image_path, mask_path, transform_images=False, encode=True)
+    for i in range(0, len(data)):
+        image, mask = data[i]
+        image_name = '{}/{}.png'.format(images_path, count)
+        save_image(image, image_name)
+        mask_name = '{}/{}.png'.format(masks_path, count)
+        save_image(mask, mask_name)
+        count += 1
+
     data = FreiburgForestDataset(image_path, mask_path, transform_images=transform, encode=True)
 
+    # need to handle when we're using some number of augmented images larger than the amount of actual data we have
+    # create random int between 0 and len(data) and access that image
+
     for i in range(0, amount):
-        image, mask = data[i]
-        image_name = '{}/{}.png'.format(images_path, i)
+        image, mask = data[random.randint(0, len(data) - 1)]
+        image_name = '{}/{}.png'.format(images_path, count)
         save_image(image, image_name)
-        mask_name = '{}/{}.png'.format(masks_path, i)
+        mask_name = '{}/{}.png'.format(masks_path, count)
         save_image(mask, mask_name)
+        count += 1
 
 
 def main():
@@ -95,15 +114,17 @@ def main():
             print('Error creating directory')
             return
 
+    # move initial data to new path and then add the augmented images
+    # images_path = args.path+'/train/rgb'
+    # masks_path = args.path+'/train/masks'
+    # shutil.copytree(args.images, images_path)
+    # shutil.copytree(args.masks, masks_path)
+
     # transform and save images
     transform_images(args.images, args.masks, args.path, args.train, images_path, masks_path, args.transform, args.amount)
 
     # create text file for image locations
     create_file(args.images, args.masks, args.path, args.train, images_path, masks_path)
-
-
-    # todo: make command line args to select how much data to augment and generate new dataset
-    # todo: decide between online/offline data augmentation
 
 
 if __name__ == '__main__':

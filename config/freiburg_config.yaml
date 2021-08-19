@@ -1,0 +1,9 @@
+model: "Unet"
+dataset: "Freiburg Forest"
+optimizer: "Adam"
+lr: 0.001
+batch_size: 5
+epochs: 2
+loss: "Cross Entropy"
+height: 256
+width: 256
