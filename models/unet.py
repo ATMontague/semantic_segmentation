@@ -196,8 +196,3 @@ class UnetExpanded(nn.Module):
         # output
         x = self.conv19(x)
         return x
-
-
-if __name__ == '__main__':
-    net = Unet()
-    print(net)
