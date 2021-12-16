@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from PIL import Image
 import torchvision.transforms as T
-from models.simple import Net
+from src.models.simple import Net
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 

@@ -5,9 +5,9 @@ import numpy as np
 from sklearn.metrics import jaccard_score as jsc
 from PIL import Image
 from torchvision.utils import save_image
-from ignite.metrics.confusion_matrix import ConfusionMatrix
-from models.simple import Net
+from src.models.simple import Net
 from inference import decode_segmentation_map
+from ignite.metrics import ConfusionMatrix
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -113,12 +113,14 @@ def main():
     # load previously computed model
     model = Net()
     model = model.to(device)
-    m = 'best_model.pt'
+    m = '../models/best_model.pt'
     model.load_state_dict(torch.load(m, map_location=torch.device('cpu')))
     model.eval()
 
     #acc_single_img = calculate_accuracy_single_image(model, test_loader, dataset.num_classes, dataset='freiburg',visualize=True)
     confusion_mat, scores = calculate_accuracy(model, test_loader, dataset.num_classes)
+    print(confusion_mat)
+    print(scores)
 
 
 if __name__ == '__main__':

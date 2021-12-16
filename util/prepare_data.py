@@ -6,17 +6,18 @@ from distutils.dir_util import copy_tree
 import shutil
 import random
 
+# todo: add function to append depth data to rgb and save each image as numpy array
+
 
 def get_args():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--images', default='/mnt/d/data/freiburg_forest_annotated/train/rgb',
+    parser.add_argument('--images', default='../data/freiburg_forest_annotated/train/rgb',
                         help='The path to the training data folder.')
-    parser.add_argument('--masks', default='/mnt/d/data/freiburg_forest_annotated/train/GT_color',
+    parser.add_argument('--masks', default='../data/freiburg_forest_annotated/train/GT_color',
                         help='The path to the test data folder.')
     parser.add_argument('--train', default='True', help='Train or test.')
-    parser.add_argument('--path', default='/mnt/c/Users/atmon/repos/tutorials/semantic_segmentation/data/freiburg_augmented',
-                        help='Path where new data will be saved.')
+    parser.add_argument('--path', default='..n/data/freiburg_augmented', help='Path where new data will be saved.')
     parser.add_argument('--dataset', default='Freiburg Forest', help='Dataset to be used.')
     parser.add_argument('--transform', default=True, help='Performing data augmentation.')
     parser.add_argument('--amount', default=1000, help='How many new images to create.')
