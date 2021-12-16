@@ -124,13 +124,80 @@ def main():
     except FileNotFoundError:
         raise FileNotFoundError('No config file found.')
 
-    trans = A.Compose(
-        [
-            A.Resize(params['height'], params['width']),
-            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ToTensorV2()
-        ]
-    )
+    # todo: simplify this
+    if params['transform'] == 'horizontal flip':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.HorizontalFlip(),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
+    elif params['transform'] == 'vertical flip':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.VerticalFlip(),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
+    elif params['transform'] == 'flip':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.VerticalFlip(),
+                A.HorizontalFlip(),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
+    elif params['transform'] == 'rotate':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.IAAAffine(rotate=(-360, 360)),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
+    elif params['transform'] == 'translate':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.IAAAffine(translate_px=(0, 100), mode='constant', cval=0),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
+        # todo: make sure null class separate from obstacle class
+    elif params['transform'] == 'drop':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.CoarseDropout(max_holes=25, max_height=15, max_width=15, min_holes=1, min_height=5, min_width=5),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
+    elif params['transform'] == 'scale':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.IAAAffine(scale=(0.8, 1.2), mode='constant', cval=0),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
+    else:
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
 
     # load training dataset
     image_path = 'data/freiburg_forest_annotated/train/rgb'
