@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
-from modules import eASPP
+from src.models.modules import eASPP
 
 
 def double_conv(in_channels, out_channels):
@@ -17,7 +17,7 @@ def double_conv(in_channels, out_channels):
 
 class UnetTest(nn.Module):
 
-    def __init__(self, num_classes=1):
+    def __init__(self, num_classes):
         super(UnetTest, self).__init__()
 
         self.name = 'UnetTest'
@@ -96,12 +96,12 @@ class UnetTest(nn.Module):
         return x
 
 
-
 class Unet(nn.Module):
 
-    def __init__(self, num_classes=6):
+    def __init__(self, num_classes):
         super(Unet, self).__init__()
 
+        self.name = 'Unet'
         self.num_classes = num_classes
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
