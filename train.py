@@ -3,15 +3,18 @@ import yaml
 import torch
 from torch.optim import Adam
 import torch.nn as nn
-from datasets import FreiburgForestDataset
+from src.datasets import FreiburgForestDataset
 from torch.utils.data import DataLoader, random_split
 import numpy as np
 from src.models.unet import Unet
-import matplotlib.pyplot as plt
 from mlflow import log_metric, log_param
+from tqdm import tqdm
+from torchmetrics.classification import IoU, Precision, Accuracy
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def get_args():
@@ -28,11 +31,16 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
 
     # track change in validation loss
     valid_loss_min = np.Inf
-    train_loss_over_time = []
-    valid_loss_over_time = []
 
-    for e in range(epochs):
-        print('EPOCH: ', e)
+    # track additional metrics
+    valid_precision = Precision(compute_on_step=False, num_classes=model.num_classes,
+                                average='none', mdmc_average='global')
+    valid_accuracy = Accuracy(compute_on_step=False, num_classes=model.num_classes,
+                              average='none', mdmc_average='global')
+    valid_iou = IoU(compute_on_step=False, num_classes=model.num_classes, reduction='none')
+
+    for e in tqdm(range(0, epochs)):
+
         # track training & validation loss
         train_loss = 0.0
         validation_loss = 0.0
@@ -41,20 +49,19 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
         # train the model #
         ###################
         model.train()
-        for images, labels in train_loader:
-            images = images.to(device)  # shape = (batch_size, num_channels, height, width) = (n, 3, H, W)
-            labels = labels.to(device)  # shape = (batch_size, num_channels, height, width) = (n, 1, H, W)
+        for images, masks in train_loader:
+            images = images.to(device)  # shape = (batch_size, 3, height, width)
+            masks = masks.to(device)  # shape = (batch_size, 1, height, width)
 
-            # reverse normalization to get class labels
-            labels = labels*255  # todo: see if this is correct or see if there is a better way
-            target = labels.squeeze(1)
-            target = torch.tensor(target, dtype=torch.long)
+            target = masks.squeeze(dim=1)
+            target = target.type(torch.LongTensor)
+            target = target.to(device)
 
             # clear the gradients of all optimized variables
             optimizer.zero_grad()
 
             # forward
-            output = model(images)  # shape = (batch_size, num_classes, height, width) = (n, 6, H, W)
+            output = model(images)  # shape = (batch_size, num_classes, height, width)
 
             # backward
             loss = criterion(output, target)
@@ -66,36 +73,46 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
         # validate the model #
         ######################
         model.eval()
-        for images, labels in valid_loader:
-            images, labels = images.to(device), labels.to(device)
+        with torch.no_grad():
+            for images, masks in valid_loader:
+                images = images.to(device)
+                masks = masks.to(device)
 
-            # reverse normalization to get class labels
-            labels = labels*255
-            target = labels.squeeze(1)
-            target = torch.tensor(target, dtype=torch.long)
+                target = masks.squeeze(dim=1)
+                target = target.type(torch.LongTensor)
+                target = target.to(device)
 
-            # forward
-            output = model(images)
+                # forward
+                output = model(images)
 
-            # backward
-            loss = criterion(output, target)
-            validation_loss += loss.item() * images.size(0)
+                # metric calculation
+                prediction = torch.argmax(output, dim=1)
+                valid_precision(prediction, target)
+                valid_accuracy(prediction, target)
+                valid_iou(prediction, target)
+
+                # backward
+                loss = criterion(output, target)
+                validation_loss += loss.item() * images.size(0)
 
         # calculate average losses
         train_loss = train_loss / len(train_loader.sampler)
         validation_loss = validation_loss / len(valid_loader.sampler)
-        train_loss_over_time.append(train_loss)
-        valid_loss_over_time.append(validation_loss)
         log_metric('training loss', train_loss)
         log_metric('validation loss', validation_loss)
+
+        # calculate and log metrics
+        log_metric('IoU', torch.mean(valid_iou.compute()).item())
+        log_metric('Precision', torch.mean(valid_precision.compute()).item())
+        log_metric('Accuracy', torch.mean(valid_accuracy.compute()).item())
 
         # save model if validation loss has decreased
         if validation_loss <= valid_loss_min:
             print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_loss_min, validation_loss))
-            torch.save(model.state_dict(), 'models/best_model.pt')
+            save_name = 'checkpoints/{}.pt'.format(model.name)
+            torch.save(model.state_dict(), save_name)
             valid_loss_min = validation_loss
-            #log_metric('validation loss', valid_loss_min)
-    return train_loss_over_time, valid_loss_over_time
+            log_metric('validation loss', valid_loss_min)
 
 
 def main():
@@ -107,11 +124,20 @@ def main():
     except FileNotFoundError:
         raise FileNotFoundError('No config file found.')
 
+    trans = A.Compose(
+        [
+            A.Resize(params['height'], params['width']),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ToTensorV2()
+        ]
+    )
+
     # load training dataset
     image_path = 'data/freiburg_forest_annotated/train/rgb'
     mask_path = 'data/freiburg_forest_annotated/train/GT_color'
-    dataset = FreiburgForestDataset(image_path, mask_path, transform_images=False, encode=True)
+    dataset = FreiburgForestDataset(image_path, mask_path, transform=trans, encode=True)
 
+    # todo: correct this
     # split train into train/validation
     train_count = int(np.ceil(0.8 * len(dataset)))
     valid_count = int(np.floor(0.2 * len(dataset)))
@@ -120,7 +146,7 @@ def main():
     valid_loader = DataLoader(dataset=validation_data, batch_size=params['batch_size'], shuffle=True)
 
     # load model
-    model = Unet()
+    model = Unet(6)
     learning_rate = params['lr']
     criterion = nn.CrossEntropyLoss()
     optim = Adam(model.parameters(), lr=learning_rate)
@@ -138,16 +164,8 @@ def main():
 
     # train the model
     print('----------------------training----------------------')
-    train_loss, valid_loss = train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
-                                         criterion=criterion, optimizer=optim, epochs=params['epochs'])
-
-    # plot train loss
-    plt.plot(train_loss, label='Training Loss')
-    plt.plot(valid_loss, label='Validation Loss')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend(frameon=False)
-    plt.savefig('model_loss.png')
+    train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
+                criterion=criterion, optimizer=optim, epochs=params['epochs'])
 
 
 if __name__ == '__main__':
