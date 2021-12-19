@@ -78,7 +78,6 @@ class KvasirSegDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mask = cv2.imread(self.gt_path[idx], cv2.IMREAD_GRAYSCALE)
         bboxes = self.bbox_data[idx]
-
         # encode mask: [H, W, C] -> [H, W] and each 'pixel' in mask is 0 or 1
         mask = self.rgb_to_class(mask)
 
@@ -86,6 +85,16 @@ class KvasirSegDataset(Dataset):
             transformed = self.transform(image=image, mask=mask, bboxes=bboxes)
             image = transformed['image']
             mask = transformed['mask']
+            bboxes = transformed['bboxes']
+
+            # todo: determine source of error and correct.
+            # for some reason resizing is returning bbox values as floats
+            new_bboxes = []
+            for bbox in bboxes:
+                xmin, ymin, xmax, ymax, c = bbox
+                bb = (int(xmin), int(ymin), int(xmax), int(ymax), c)
+                new_bboxes.append(bb)
+            bboxes = new_bboxes
         return image, mask, bboxes
 
 
