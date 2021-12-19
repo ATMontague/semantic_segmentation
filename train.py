@@ -125,6 +125,7 @@ def main():
         raise FileNotFoundError('No config file found.')
 
     # todo: simplify this
+    # todo: add cut/paste type transform to add additional obstacles to handle class imbalance
     if params['transform'] == 'horizontal flip':
         trans = A.Compose(
             [
@@ -190,6 +191,24 @@ def main():
                 ToTensorV2()
             ]
         )
+    elif params['transform'] == 'crop':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.RandomCropNearBBox()
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
+    elif params['transform'] == 'solar flare':
+        trans = A.Compose(
+            [
+                A.Resize(params['height'], params['width']),
+                A.RandomSunFlare(),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ]
+        )
     else:
         trans = A.Compose(
             [
@@ -228,6 +247,8 @@ def main():
     log_param('loss', 'Cross Entropy')
     log_param('optim', 'Adam')
     log_param('epochs', params['epochs'])
+    log_param('height', params['height'])
+    log_param('width', params['width'])
 
     # train the model
     print('----------------------training----------------------')
