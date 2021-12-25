@@ -11,6 +11,7 @@ import copy
 BOX_COLOR = (255, 0, 0)  # Red
 TEXT_COLOR = (255, 255, 255)  # White
 
+
 # from albumentations example
 # https://albumentations.ai/docs/examples/example_bboxes/
 def visualize_bbox(img, bboxes, class_name='polyp', color=BOX_COLOR, thickness=2):
@@ -34,61 +35,44 @@ def visualize_bbox(img, bboxes, class_name='polyp', color=BOX_COLOR, thickness=2
     return img
 
 
-def visualize(image, bboxes):
-    img = image.copy()
-    # for bbox, category_id in zip(bboxes, category_ids):
-    #     class_name = category_id_to_name[category_id]
-    img = visualize_bbox(img, bboxes)
-    plt.figure(figsize=(12, 12))
-    plt.axis('off')
-    plt.imshow(img)
-    plt.savefig('bbox_viz.png')
+def visualize(dataset, idx, samples):
 
-
-# from albumentations tutorial
-# https://albumentations.ai/docs/examples/pytorch_semantic_segmentation/
-def visualize_augmentations(dataset, idx=0, samples=5):
-    dataset = copy.deepcopy(dataset)
-    dataset.transform = A.Compose([t for t in dataset.transform if not isinstance(t, (A.Normalize, ToTensorV2))])
-    figure, ax = plt.subplots(nrows=samples, ncols=2, figsize=(5, 10))
-    for i in range(samples):
-        image, mask, bbox = dataset[idx]
-        image = visualize_bbox(image, bbox)
-        ax[i, 0].imshow(image)
-        ax[i, 1].imshow(mask, interpolation="nearest")
+    fig, ax = plt.subplots(nrows=samples, ncols=2, figsize=(5, 10))
+    for i in range(0, samples):
+        img, mask, bboxes = dataset[idx]
+        mask = mask * 255
+        img = img.cpu().detach().numpy()
+        img = np.moveaxis(img, 0, -1)
+        img = visualize_bbox(img, bboxes)
+        ax[i, 0].imshow(img)
+        ax[i, 1].imshow(mask)
         ax[i, 0].set_title("Augmented image")
         ax[i, 1].set_title("Augmented mask")
         ax[i, 0].set_axis_off()
         ax[i, 1].set_axis_off()
     plt.tight_layout()
-    plt.savefig('aug_results.png')
+    plt.savefig('bbox_viz.png')
 
 
 def main():
 
     img_path = '../data/Kvasir-SEG/images'
     gt_path = '../data/Kvasir-SEG/masks'
-    bbox_path = '../data/Kvasir-SEG/kavsir_bboxesv2.json'
+    bbox_path = '../data/Kvasir-SEG/kavsir_bboxes.json'
 
     trans = A.Compose(
             [
                 A.Resize(height=512, width=512),
                 A.HorizontalFlip(),
-                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                # A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                 ToTensorV2(),
             ], bbox_params=A.BboxParams(format='pascal_voc'))
 
     idx = 645
+    samps = 4
     dataset = KvasirSegDataset(img_path, gt_path, bbox_path, transform=trans)
-    img, mask, bbox = dataset[idx]
-    mask = mask*255
 
-    # alpha = 0.5
-    # beta = (1 - alpha)
-    # image = cv2.addWeighted(img, alpha, mask, beta, gamma=0.0)
-
-    visualize(img, bbox)
-    # visualize_augmentations(dataset, idx=idx, samples=5)
+    visualize(dataset, idx=idx, samples=samps)
 
 
 if __name__ == '__main__':
