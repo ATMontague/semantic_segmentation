@@ -8,8 +8,11 @@ def check_masks(masks):
     with open('mask_errors.txt', 'w') as f:
         for m in masks:
             img = cv2.imread(m, cv2.IMREAD_GRAYSCALE)
-            top_left = img[0, 0]
-            if top_left != 0:
+            # really strange, there are small values in [1, 5] in the top left of some images
+            top_left = img[0:8, 0:8]
+            if img[0, 0] != 0:
+                # print(top_left)
+                # print()
                 f.write(m)
                 f.write('\n')
 
@@ -46,9 +49,10 @@ def update_bas_masks(masks, bad_mask_list):
         # not ideal but too lazy to move good images
         img = cv2.imread(m)
         if m in mask_errors:
-            img[0, 0] = (0, 0, 0)
+            # img[0, 0] = (0, 0, 0)
+            img[0:8, 0:8] = (0, 0, 0)
         # move to new location
-        name = new_loc + m[26:]
+        name = new_loc + m[25:]
         cv2.imwrite(name, img)
 
 
@@ -56,7 +60,7 @@ def main():
     path = '../data/Kvasir-SEG/masks'
     masks = sorted(glob.glob(os.path.join(path, '*')))
 
-    # check_masks(masks)
+    check_masks(masks)
     # resolutions = identify_resolutions(masks)
 
     bad = 'mask_errors.txt'
