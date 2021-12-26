@@ -9,12 +9,42 @@ from albumentations.pytorch import ToTensorV2
 import json
 
 
-class KvasirSegDataset(Dataset):
+class CVCClinicDB(Dataset):
 
-    def __init__(self, image_path, gt_path, bboxes_path, transform=None):
+    def __init__(self, image_path, gt_path, transform=None):
         self.image_path = sorted(glob.glob(os.path.join(image_path, '*')))
         self.gt_path = sorted(glob.glob(os.path.join(gt_path, '*')))
-        self.bbox_data = self.process_bboxes(bboxes_path)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.image_path)
+
+    def __getitem__(self, idx):
+        image = cv2.imread(self.image_path[idx])
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mask = cv2.imread(self.gt_path[idx], cv2.IMREAD_GRAYSCALE)
+
+        # encode mask: [H, W, C] -> [H, W] and each 'pixel' in mask is 0 or 1
+        thresh, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+        mask = mask / 255.
+
+        if self.transform is not None:
+            transformed = self.transform(image=image, mask=mask)
+            image = transformed['image']
+            mask = transformed['mask']
+        return image, mask
+
+
+class KvasirSegDataset(Dataset):
+
+    def __init__(self, image_path, gt_path, bboxes_path=None, transform=None):
+        self.image_path = sorted(glob.glob(os.path.join(image_path, '*')))
+        self.gt_path = sorted(glob.glob(os.path.join(gt_path, '*')))
+        if bboxes_path is not None:
+            self.bbox_data = self.process_bboxes(bboxes_path)
+            self.use_bbox = True
+        else:
+            self.use_bbox = False
         self.transform = transform
 
     def process_bboxes(self, path):
@@ -24,7 +54,8 @@ class KvasirSegDataset(Dataset):
         data = json.load(f)
         bboxes = []
         for name in self.image_path:
-            n = name[26: -4]  # stripping image name from path
+            # todo: replace this with regex for more accuracy
+            n = name[23: -4]  # stripping image name from path
             info = data[n]['bbox']  # get data for specific image bboxes
             current_img_bboxes = []  # there can be more than one polyp per image
             for i in range(0, len(info)):
@@ -77,24 +108,32 @@ class KvasirSegDataset(Dataset):
         image = cv2.imread(self.image_path[idx])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mask = cv2.imread(self.gt_path[idx], cv2.IMREAD_GRAYSCALE)
-        bboxes = self.bbox_data[idx]
+
         # encode mask: [H, W, C] -> [H, W] and each 'pixel' in mask is 0 or 1
         mask = self.rgb_to_class(mask)
 
-        if self.transform is not None:
-            transformed = self.transform(image=image, mask=mask, bboxes=bboxes)
-            image = transformed['image']
-            mask = transformed['mask']
-            bboxes = transformed['bboxes']
+        if self.use_bbox:
+            bboxes = self.bbox_data[idx]
+            if self.transform is not None:
+                transformed = self.transform(image=image, mask=mask, bboxes=bboxes)
+                image = transformed['image']
+                mask = transformed['mask']
+                bboxes = transformed['bboxes']
 
-            # todo: determine source of error and correct.
-            # for some reason resizing is returning bbox values as floats
-            new_bboxes = []
-            for bbox in bboxes:
-                xmin, ymin, xmax, ymax, c = bbox
-                bb = (int(xmin), int(ymin), int(xmax), int(ymax), c)
-                new_bboxes.append(bb)
-            bboxes = new_bboxes
-        return image, mask, bboxes
+                # todo: determine source of error and correct.
+                # for some reason resizing is returning bbox values as floats
+                new_bboxes = []
+                for bbox in bboxes:
+                    xmin, ymin, xmax, ymax, c = bbox
+                    bb = (int(xmin), int(ymin), int(xmax), int(ymax), c)
+                    new_bboxes.append(bb)
+                bboxes = new_bboxes
+            return image, mask, bboxes
+        else:
+            if self.transform is not None:
+                transformed = self.transform(image=image, mask=mask)
+                image = transformed['image']
+                mask = transformed['mask']
+            return image, mask
 
 
