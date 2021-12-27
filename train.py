@@ -4,6 +4,7 @@ import torch
 from torch.optim import Adam
 import torch.nn as nn
 from src.datasets import FreiburgForestDataset
+from src import KvasirSegDataset, CVCClinicDB
 from torch.utils.data import DataLoader, random_split
 import numpy as np
 from src.models.unet import Unet
@@ -12,6 +13,7 @@ from tqdm import tqdm
 from torchmetrics.classification import IoU, Precision, Accuracy
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+from torch.utils.data import ConcatDataset
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,11 +35,25 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
     valid_loss_min = np.Inf
 
     # track additional metrics
-    valid_precision = Precision(compute_on_step=False, num_classes=model.num_classes,
-                                average='none', mdmc_average='global')
-    valid_accuracy = Accuracy(compute_on_step=False, num_classes=model.num_classes,
-                              average='none', mdmc_average='global')
-    valid_iou = IoU(compute_on_step=False, num_classes=model.num_classes, reduction='none')
+    # todo: move outside of function and pass as arg
+    THRESH = 0.5
+    if model.num_classes == 1:
+        precision = Precision(compute_on_step=False, threshold=THRESH, multiclass=False,
+                              num_classes=1, average='none')
+        accuracy = Accuracy(compute_on_step=False, threshold=THRESH, multiclass=False,
+                            num_classes=1, average='none')
+        # according to docs we need num_classes=2
+        iou = IoU(compute_on_step=False, threshold=THRESH, num_classes=2)
+    else:
+        precision = Precision(compute_on_step=False, num_classes=model.num_classes,
+                                    average='none', mdmc_average='global')
+        accuracy = Accuracy(compute_on_step=False, num_classes=model.num_classes,
+                                  average='none', mdmc_average='global')
+        iou = IoU(compute_on_step=False, num_classes=model.num_classes, reduction='none')
+
+    precision = precision.to(device)
+    accuracy = accuracy.to(device)
+    iou = iou.to(device)
 
     for e in tqdm(range(0, epochs)):
 
@@ -50,18 +66,18 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
         ###################
         model.train()
         for images, masks in train_loader:
-            images = images.to(device)  # shape = (batch_size, 3, height, width)
-            masks = masks.to(device)  # shape = (batch_size, 1, height, width)
+            images = images.to(device)  # shape = (b, 3, h, w)
+            masks = masks.to(device)  # shape = (b, 1, h, w)
 
             target = masks.squeeze(dim=1)
-            target = target.type(torch.LongTensor)
-            target = target.to(device)
+            # target = target.type(torch.LongTensor)
+            # target = target.to(device)
 
             # clear the gradients of all optimized variables
             optimizer.zero_grad()
 
             # forward
-            output = model(images)  # shape = (batch_size, num_classes, height, width)
+            output = model(images)  # shape = (b, num_classes, h, w)
 
             # backward
             loss = criterion(output, target)
@@ -79,19 +95,22 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
                 masks = masks.to(device)
 
                 target = masks.squeeze(dim=1)
-                target = target.type(torch.LongTensor)
+                target = target.type(torch.IntTensor)
                 target = target.to(device)
 
-                # forward
+                # forward. softmax to convert to probs, then convert to classes
                 output = model(images)
+                prediction = torch.sigmoid(output)
+                prediction = torch.where(prediction > THRESH, 1, 0)
 
                 # metric calculation
-                prediction = torch.argmax(output, dim=1)
-                valid_precision(prediction, target)
-                valid_accuracy(prediction, target)
-                valid_iou(prediction, target)
+                precision(prediction.view(-1), target.view(-1))
+                accuracy(prediction.view(-1), target.view(-1))
+                iou(prediction, target)
 
                 # backward
+                target = target.type(torch.FloatTensor)
+                target = target.to(device)
                 loss = criterion(output, target)
                 validation_loss += loss.item() * images.size(0)
 
@@ -102,9 +121,9 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
         log_metric('validation loss', validation_loss)
 
         # calculate and log metrics
-        log_metric('IoU', torch.mean(valid_iou.compute()).item())
-        log_metric('Precision', torch.mean(valid_precision.compute()).item())
-        log_metric('Accuracy', torch.mean(valid_accuracy.compute()).item())
+        log_metric('IoU', torch.mean(iou.compute()).item())
+        log_metric('Precision', torch.mean(precision.compute()).item())
+        log_metric('Accuracy', torch.mean(accuracy.compute()).item())
 
         # save model if validation loss has decreased
         if validation_loss <= valid_loss_min:
@@ -112,7 +131,6 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
             save_name = 'checkpoints/{}.pt'.format(model.name)
             torch.save(model.state_dict(), save_name)
             valid_loss_min = validation_loss
-            log_metric('validation loss', valid_loss_min)
 
 
 def main():
@@ -195,7 +213,7 @@ def main():
         trans = A.Compose(
             [
                 A.Resize(params['height'], params['width']),
-                A.RandomCropNearBBox()
+                A.RandomCropNearBBox(),
                 A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                 ToTensorV2()
             ]
@@ -219,23 +237,60 @@ def main():
         )
 
     # load training dataset
-    image_path = 'data/freiburg_forest_annotated/train/rgb'
-    mask_path = 'data/freiburg_forest_annotated/train/GT_color'
-    dataset = FreiburgForestDataset(image_path, mask_path, transform=trans, encode=True)
+    if params['dataset'] == 'Polyp':
+        kvasir = KvasirSegDataset(params['img_loc'][0], params['mask_loc'][0], None, transform=trans)
+        cvc = CVCClinicDB(params['img_loc'][1], params['mask_loc'][1], transform=trans)
+        dataset = ConcatDataset([kvasir, cvc])
+    else:
+        raise NotImplementedError
+        image_path = params['img_loc']
+        mask_path = params['mask_loc']
+        if params['bbox_loc'] is not None:
+            bbox_loc = params['bbox_loc']
 
-    # todo: correct this
-    # split train into train/validation
-    train_count = int(np.ceil(0.8 * len(dataset)))
-    valid_count = int(np.floor(0.2 * len(dataset)))
-    train_data, validation_data = random_split(dataset, (train_count, valid_count))
-    train_loader = DataLoader(dataset=train_data, batch_size=params['batch_size'], shuffle=True)
-    valid_loader = DataLoader(dataset=validation_data, batch_size=params['batch_size'], shuffle=True)
+        if params['dataset'] == 'Freiburg Forest':
+            dataset = FreiburgForestDataset(image_path, mask_path, transform=trans, encode=True)
+        elif params['dataset'] == 'Kvasir':
+            dataset = KvasirSegDataset(image_path, mask_path, bbox_loc, transform=trans)
+
+    # todo: save test_loader to disc
+    assert((params['train_ratio'] + params['validation_ratio'] + params['test_ratio']) == 1)
+    train_count = int(np.ceil(params['train_ratio'] * len(dataset)))
+    valid_count = int(np.floor(params['validation_ratio'] * len(dataset)))
+    test_count = len(dataset) - train_count - valid_count
+    train_data, validation_data, test_data = random_split(dataset, (train_count, valid_count, test_count))
+    train_loader = DataLoader(dataset=train_data, batch_size=params['batch_size'], shuffle=True, drop_last=True)
+    valid_loader = DataLoader(dataset=validation_data, batch_size=params['batch_size'], shuffle=True, drop_last=True)
+    test_loader = DataLoader(dataset=test_data, batch_size=params['batch_size'], shuffle=True)
+    assert(train_count + valid_count + test_count == len(dataset))
+
+    # print(len(dataset))
+    # print('train: ', train_count)
+    # print('valid: ', valid_count)
+    # print('test: ', test_count)
+    # print('batches')
+    # print('train: ', len(train_loader))
+    # print('val: ', len(valid_loader))
+    # raise NotImplementedError
 
     # load model
-    model = Unet(6)
-    learning_rate = params['lr']
-    criterion = nn.CrossEntropyLoss()
-    optim = Adam(model.parameters(), lr=learning_rate)
+    if params['model'] == 'Unet':
+        model = Unet(num_classes=params['classes'])
+    else:
+        raise NotImplementedError
+
+    if params['loss'] == 'Cross Entropy':
+        if model.num_classes == 2:
+            criterion = nn.BCEWithLogitsLoss()
+        else:
+            criterion = nn.CrossEntropyLoss()
+    else:
+        raise NotImplementedError
+
+    if params['optimizer'] == 'Adam':
+        optim = Adam(model.parameters(), lr=params['lr'])
+    elif params['optimizer']  == 'SGD':
+        optim = SGD(model.parameters(), lr=params['lr'])
 
     # track hyperparameters
     log_param('model', params['model'])
