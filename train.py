@@ -130,7 +130,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, model_p
                 # forward. softmax to convert to probs, then convert to classes
                 output = model(images)
                 prediction = torch.sigmoid(output)
-                prediction = torch.where(prediction > THRESH, 1, 0)
+                prediction = torch.where(prediction > thresh, 1, 0)
 
                 # metric calculation
                 precision(prediction.view(-1), target.view(-1))
