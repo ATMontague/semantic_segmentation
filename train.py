@@ -14,6 +14,8 @@ from torchmetrics.classification import IoU, Precision, Accuracy
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import ConcatDataset
+import cv2
+import matplotlib.pyplot as plt
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -26,7 +28,36 @@ def get_args():
     return parser.parse_args()
 
 
-def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=2):
+def view_results(img, mask, prediction, blend=True):
+    """
+    Display the original image, gt mask, and model prediction
+    :param img: np.ndarray of shape (h, w, c)
+    :param mask: np.ndarray of shape (h, w, c)
+    :param prediction: np.ndarray of shape (h, w, c)
+    :param blend: bool, to overlay prediction or show by itself
+    :return: None, saves image
+    """
+
+    if blend:
+        alpha = 0.5
+        beta = (1 - alpha)
+        prediction = cv2.addWeighted(prediction, alpha, img, beta, 0.0)
+
+    fig, ax = plt.subplots(1, 3, figsize=(6, 2), dpi=500)
+
+    ax[0].imshow(img)
+    ax[0].set_title('RGB')
+    ax[0].axis('off')
+    ax[1].imshow(mask)
+    ax[1].set_title('GT')
+    ax[2].imshow(prediction)
+    ax[2].set_title('Prediction')
+    for i in range(0, 3):
+        ax[i].axis('off')
+    fig.savefig('results.jpg')
+
+
+def train_model(model, train_loader, valid_loader, criterion, optimizer, model_pt, thresh, epochs=2):
 
     # move model to appropriate device
     model = model.to(device)
@@ -35,15 +66,13 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
     valid_loss_min = np.Inf
 
     # track additional metrics
-    # todo: move outside of function and pass as arg
-    THRESH = 0.5
     if model.num_classes == 1:
-        precision = Precision(compute_on_step=False, threshold=THRESH, multiclass=False,
+        precision = Precision(compute_on_step=False, threshold=thresh, multiclass=False,
                               num_classes=1, average='none')
-        accuracy = Accuracy(compute_on_step=False, threshold=THRESH, multiclass=False,
+        accuracy = Accuracy(compute_on_step=False, threshold=thresh, multiclass=False,
                             num_classes=1, average='none')
         # according to docs we need num_classes=2
-        iou = IoU(compute_on_step=False, threshold=THRESH, num_classes=2)
+        iou = IoU(compute_on_step=False, threshold=thresh, num_classes=2)
     else:
         precision = Precision(compute_on_step=False, num_classes=model.num_classes,
                                     average='none', mdmc_average='global')
@@ -128,8 +157,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, epochs=
         # save model if validation loss has decreased
         if validation_loss <= valid_loss_min:
             print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_loss_min, validation_loss))
-            save_name = 'checkpoints/{}.pt'.format(model.name)
-            torch.save(model.state_dict(), save_name)
+            torch.save(model.state_dict(), model_pt)
             valid_loss_min = validation_loss
 
 
@@ -238,8 +266,8 @@ def main():
 
     # load training dataset
     if params['dataset'] == 'Polyp':
-        kvasir = KvasirSegDataset(params['img_loc'][0], params['mask_loc'][0], None, transform=transform)
-        cvc = CVCClinicDB(params['img_loc'][1], params['mask_loc'][1], transform=transform)
+        kvasir = KvasirSegDataset(params['img_loc'][0], params['mask_loc'][0], None, transform=trans)
+        cvc = CVCClinicDB(params['img_loc'][1], params['mask_loc'][1], transform=trans)
         dataset = ConcatDataset([kvasir, cvc])
     else:
         raise NotImplementedError
@@ -261,7 +289,7 @@ def main():
     train_data, validation_data, test_data = random_split(dataset, (train_count, valid_count, test_count))
     train_loader = DataLoader(dataset=train_data, batch_size=params['batch_size'], shuffle=True, drop_last=True)
     valid_loader = DataLoader(dataset=validation_data, batch_size=params['batch_size'], shuffle=True, drop_last=True)
-    test_loader = DataLoader(dataset=test_data, batch_size=params['batch_size'], shuffle=True)
+    test_loader = DataLoader(dataset=test_data, batch_size=1, shuffle=True)
     assert(train_count + valid_count + test_count == len(dataset))
 
     # load model
@@ -299,9 +327,36 @@ def main():
     log_param('width', params['width'])
 
     # train the model
-    print('----------------------training----------------------')
-    train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
-                criterion=criterion, optimizer=optim, epochs=params['epochs'])
+    if params['train']:
+        print('----------------------training----------------------')
+        train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
+                    criterion=criterion, optimizer=optim, model_pt=model_pt,
+                    thresh=params['threshold'], epochs=params['epochs'])
+    else:
+        try:
+            if torch.cuda.is_available():
+                model.load_state_dict(torch.load(params['model_pt']))
+            else:
+                model.load_state_dict(torch.load(params['model_pt'], map_location=torch.device('cpu')))
+        except:
+            raise FileNotFoundError
+
+        if params['viz']:
+            img, mask = next(iter(test_loader))
+            output = model(img)
+            pred = torch.where(output > params['threshold'], 1.0, 0.0).squeeze()
+            pred = pred * 255
+
+            img = img.squeeze()
+            img = img.cpu().detach().numpy()
+            img = np.moveaxis(img, 0, 2)
+            # todo: reverse normalization before visualizing img
+
+            mask = mask.squeeze()
+            mask = mask.cpu().detach().numpy()
+            mask = mask * 255
+
+            view_results(img, mask, pred, blend=False)
 
 
 if __name__ == '__main__':
