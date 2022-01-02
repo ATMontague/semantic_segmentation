@@ -3,8 +3,8 @@ dataset: "Polyp"
 train: False
 model_pt: 'checkpoints/Unet.pt'
 classes: 1
-img_loc: ['data/Kvasir-SEG/images', 'data/CVC-ClinicDB_png/Original']
-mask_loc: ['data/Kvasir-SEG/masks', 'data/CVC-ClinicDB_png/Ground Truth']
+img_loc: ['/content/drive/MyDrive/data/Kvasir-SEG/images', '/content/drive/MyDrive/data/CVC-ClinicDB_png/Original']
+mask_loc: ['/content/drive/MyDrive/data/Kvasir-SEG/masks', '/content/drive/MyDrive/data/CVC-ClinicDB_png/Ground Truth']
 bbox_loc: None
 transform: None
 train_ratio: 0.80
