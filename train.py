@@ -7,7 +7,7 @@ from src.datasets import FreiburgForestDataset
 from src import KvasirSegDataset, CVCClinicDB
 from torch.utils.data import DataLoader, random_split
 import numpy as np
-from src.models.unet import Unet
+from src.models.unet import Unet, UnetTest
 from mlflow import log_metric, log_param
 from tqdm import tqdm
 from torchmetrics.classification import IoU, Precision, Accuracy
@@ -238,8 +238,8 @@ def main():
 
     # load training dataset
     if params['dataset'] == 'Polyp':
-        kvasir = KvasirSegDataset(params['img_loc'][0], params['mask_loc'][0], None, transform=trans)
-        cvc = CVCClinicDB(params['img_loc'][1], params['mask_loc'][1], transform=trans)
+        kvasir = KvasirSegDataset(params['img_loc'][0], params['mask_loc'][0], None, transform=transform)
+        cvc = CVCClinicDB(params['img_loc'][1], params['mask_loc'][1], transform=transform)
         dataset = ConcatDataset([kvasir, cvc])
     else:
         raise NotImplementedError
@@ -264,18 +264,11 @@ def main():
     test_loader = DataLoader(dataset=test_data, batch_size=params['batch_size'], shuffle=True)
     assert(train_count + valid_count + test_count == len(dataset))
 
-    # print(len(dataset))
-    # print('train: ', train_count)
-    # print('valid: ', valid_count)
-    # print('test: ', test_count)
-    # print('batches')
-    # print('train: ', len(train_loader))
-    # print('val: ', len(valid_loader))
-    # raise NotImplementedError
-
     # load model
     if params['model'] == 'Unet':
         model = Unet(num_classes=params['classes'])
+    elif params['model'] == 'UnetTest':
+        model = UnetTest(num_classes=params['classes'])
     else:
         raise NotImplementedError
 
@@ -289,7 +282,7 @@ def main():
 
     if params['optimizer'] == 'Adam':
         optim = Adam(model.parameters(), lr=params['lr'])
-    elif params['optimizer']  == 'SGD':
+    elif params['optimizer'] == 'SGD':
         optim = SGD(model.parameters(), lr=params['lr'])
 
     # track hyperparameters
