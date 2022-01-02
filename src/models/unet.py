@@ -160,6 +160,7 @@ class Unet(nn.Module):
         x = self.block9(x)
 
         x = self.out_conv(x)
+        x = torch.squeeze(x)
         return x
 
 
