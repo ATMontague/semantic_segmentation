@@ -330,7 +330,7 @@ def main():
     if params['train']:
         print('----------------------training----------------------')
         train_model(model=model, train_loader=train_loader, valid_loader=valid_loader,
-                    criterion=criterion, optimizer=optim, model_pt=model_pt,
+                    criterion=criterion, optimizer=optim, model_pt=params['model_pt'],
                     thresh=params['threshold'], epochs=params['epochs'])
     else:
         try:
